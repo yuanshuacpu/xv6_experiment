@@ -17,3 +17,6 @@
 /myapi.key
 /.suf
 compile_commands.json
+.cache
+/.vscode
+__pycache__
