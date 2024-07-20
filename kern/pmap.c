@@ -125,9 +125,6 @@ static void* boot_alloc(uint32_t n) {
 // From UTOP to ULIM, the user is allowed to read but not write.
 // Above ULIM the user cannot read or write.
 
-size_t addr_test_pages;
-size_t addr_test_stack;
-size_t size_test_page;
 void mem_init(void) {
     uint32_t cr0;
     size_t n;
@@ -161,7 +158,7 @@ void mem_init(void) {
     // Your code goes here:
 
     // for()
-    size_test_page = sizeof(struct PageInfo);
+
     size_t num_for_page_info = npages * 8;
 
     pages = (struct PageInfo*) boot_alloc(num_for_page_info);
@@ -191,7 +188,6 @@ void mem_init(void) {
     //    - pages itself -- kernel RW, user NONE
     // Your code goes here:
 
-    addr_test_pages = PADDR(pages);
     boot_map_region(kern_pgdir, UPAGES, PTSIZE, PADDR(pages), PTE_U);
     //////////////////////////////////////////////////////////////////////
     // Use the physical memory that 'bootstack' refers to as the kernel
@@ -204,7 +200,7 @@ void mem_init(void) {
     //       overwrite memory.  Known as a "guard page".
     //     Permissions: kernel RW, user NONE
     // Your code goes here:
-    addr_test_stack = PADDR(bootstack);
+
     boot_map_region(kern_pgdir, KSTACKTOP - KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_W);
     //////////////////////////////////////////////////////////////////////
     // Map all of physical memory at KERNBASE.
