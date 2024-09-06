@@ -137,11 +137,25 @@ int debuginfo_eip(uintptr_t addr, struct Eipdebuginfo* info) {
         // Make sure this memory is valid.
         // Return -1 if it is not.  Hint: Call user_mem_check.
         // LAB 3: Your code here.
+        if (user_mem_check(curenv, (void*) USTABDATA, sizeof(struct UserStabData), 0) != 0) {
+            cprintf("user_mem_check assertion failure for va %08x\n", (uintptr_t) USTABDATA);
+            return -1;
+        }
 
         stabs = usd->stabs;
         stab_end = usd->stab_end;
+
+        if (user_mem_check(curenv, (void*) stabs, stab_end - stabs, 0) != 0) {
+            cprintf("user_mem_check assertion failure for va %08x\n", (uintptr_t) stabs);
+            return -1;
+        }
         stabstr = usd->stabstr;
         stabstr_end = usd->stabstr_end;
+
+        if (user_mem_check(curenv, (void*) stabstr, stabstr_end - stabstr, 0) != 0) {
+            cprintf("user_mem_check assertion failure for va %08x\n", (uintptr_t) stabstr);
+            return -1;
+        }
 
         // Make sure the STABS and string table memory is valid.
         // LAB 3: Your code here.

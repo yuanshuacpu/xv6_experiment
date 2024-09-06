@@ -158,10 +158,15 @@ void mem_init(void) {
     // array.  'npages' is the number of physical pages in memory.  Use memset
     // to initialize all fields of each struct PageInfo to 0.
     // Your code goes here:
+    size_t num_for_page_info = npages * 8;
 
+    pages = (struct PageInfo*) boot_alloc(num_for_page_info);
+
+    memset(pages, 0, num_for_page_info);
     //////////////////////////////////////////////////////////////////////
     // Make 'envs' point to an array of size 'NENV' of 'struct Env'.
     // LAB 3: Your code here.
+    envs = (struct Env*) boot_alloc(NENV * sizeof(struct Env));
 
     //////////////////////////////////////////////////////////////////////
     // Now that we've allocated the initial kernel data structures, we set
@@ -170,32 +175,6 @@ void mem_init(void) {
     // particular, we can now map memory using boot_map_region
     // or page_insert
     page_init();
-
-    size_t num_for_page_info = npages * 8;
-
-    pages = (struct PageInfo*) boot_alloc(num_for_page_info);
-
-    memset(pages, 0, num_for_page_info);
-
-    //////////////////////////////////////////////////////////////////////
-    // Map the 'envs' array read-only by the user at linear address UENVS
-    // (ie. perm = PTE_U | PTE_P).
-    // Permissions:
-    //    - the new image at UENVS  -- kernel R, user R
-    //    - envs itself -- kernel RW, user NONE
-    // LAB 3: Your code here.
-
-    //////////////////////////////////////////////////////////////////////
-    // Use the physical memory that 'bootstack' refers to as the kernel
-    // stack.  The kernel stack grows down from virtual address KSTACKTOP.
-    // We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
-    // to be the kernel stack, but break this into two pieces:
-    //     * [KSTACKTOP-KSTKSIZE, KSTACKTOP) -- backed by physical memory
-    //     * [KSTACKTOP-PTSIZE, KSTACKTOP-KSTKSIZE) -- not backed; so if
-    //       the kernel overflows its stack, it will fault rather than
-    //       overwrite memory.  Known as a "guard page".
-    //     Permissions: kernel RW, user NONE
-    // Your code goes here:
 
     check_page_free_list(1);
     check_page_alloc();
@@ -236,6 +215,15 @@ void mem_init(void) {
     // Your code goes here:
 
     boot_map_region(kern_pgdir, KERNBASE, 0X10000000, 0, PTE_W);
+
+    //////////////////////////////////////////////////////////////////////
+    // Map the 'envs' array read-only by the user at linear address UENVS
+    // (ie. perm = PTE_U | PTE_P).
+    // Permissions:
+    //    - the new image at UENVS  -- kernel R, user R
+    //    - envs itself -- kernel RW, user NONE
+    // LAB 3: Your code here.
+    boot_map_region(kern_pgdir, UENVS, PTSIZE, PADDR(envs), PTE_U);
 
     // Check that the initial page directory has been set up correctly.
     check_kern_pgdir();
@@ -659,8 +647,36 @@ static uintptr_t user_mem_check_addr;
 //
 int user_mem_check(struct Env* env, const void* va, size_t len, int perm) {
     // LAB 3: Your code here.
+    if ((uintptr_t) va >= ULIM) {
+        user_mem_check_addr = (uintptr_t) va;
+        goto bad;
+    }
+    uintptr_t start_addr_alin = ROUNDDOWN((uintptr_t) va, PGSIZE);
+    uintptr_t end_addr_alin = ROUNDUP((uintptr_t) (((uintptr_t) va) + len), PGSIZE);
+
+    for (uintptr_t i = start_addr_alin; i < end_addr_alin; i += PGSIZE) {
+        if (i >= ULIM) {
+            user_mem_check_addr = (uintptr_t) i;
+            goto bad;
+        }
+        pte_t* ret_pte;
+        struct PageInfo* ret_page = page_lookup(env->env_pgdir, (void*) i, &ret_pte);
+        if ((ret_page == NULL) || (*ret_pte & (PTE_P | perm)) != (PTE_P | perm)) {
+            if (i < (uintptr_t) va) {
+                user_mem_check_addr = (uintptr_t) va;
+            } else {
+                user_mem_check_addr = (uintptr_t) i;
+            }
+
+            goto bad;
+        }
+    }
 
     return 0;
+
+bad:
+    cprintf("[%08x] user_mem_check assertion failure for va %08x\n", (uintptr_t) env->env_id, (uintptr_t) user_mem_check_addr);
+    return -E_FAULT;
 }
 
 //

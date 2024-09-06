@@ -147,8 +147,8 @@ QEMUOPTS += $(shell if $(QEMU) -nographic -help | grep -q '^-D '; then echo '-D 
 IMAGES = $(OBJDIR)/kern/kernel.img
 QEMUOPTS += $(QEMUEXTRA)
 
-# .gdbinit: .gdbinit.tmpl
-# 	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
+.gdbinit: .gdbinit.tmpl
+	sed "s/localhost:1234/localhost:$(GDBPORT)/" < $^ > $@
 
 gdb:
 	$(GDB) -n -x .gdbinit
@@ -170,7 +170,7 @@ qemu-gdb: $(IMAGES)
 	@echo "***"
 	$(QEMU) $(QEMUOPTS) -S
 
-qemu-nox-gdb: $(IMAGES)
+qemu-nox-gdb: $(IMAGES) 
 	@echo "***"
 	@echo "*** Now run 'make gdb'." 1>&2
 	@echo "***"
@@ -305,16 +305,28 @@ myapi.key:
 prep-%:
 	$(V)$(MAKE) "INIT_CFLAGS=${INIT_CFLAGS} -DTEST=`case $* in *_*) echo $*;; *) echo user_$*;; esac`" $(IMAGES)
 
-run-%-nox-gdb: prep-% pre-qemu
+# run-%-nox-gdb: prep-% pre-qemu
+# 	$(QEMU) -nographic $(QEMUOPTS) -S
+
+# run-%-gdb: prep-% pre-qemu
+# 	$(QEMU) $(QEMUOPTS) -S
+
+# run-%-nox: prep-% pre-qemu
+# 	$(QEMU) -nographic $(QEMUOPTS)
+
+# run-%: prep-% pre-qemu
+# 	$(QEMU) $(QEMUOPTS)
+
+run-%-nox-gdb: prep-% 
 	$(QEMU) -nographic $(QEMUOPTS) -S
 
-run-%-gdb: prep-% pre-qemu
+run-%-gdb: prep-% 
 	$(QEMU) $(QEMUOPTS) -S
 
-run-%-nox: prep-% pre-qemu
+run-%-nox: prep-% 
 	$(QEMU) -nographic $(QEMUOPTS)
 
-run-%: prep-% pre-qemu
+run-%: prep-%
 	$(QEMU) $(QEMUOPTS)
 
 # This magic automatically generates makefile dependencies
