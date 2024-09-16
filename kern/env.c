@@ -262,6 +262,7 @@ int env_alloc(struct Env** newenv_store, envid_t parent_id) {
     // Enable interrupts while in user mode.
     // LAB 4: Your code here.
 
+    e->env_tf.tf_eflags |= FL_IF; //使能中断位
     // Clear the page fault handler until user installs one.
     e->env_pgfault_upcall = 0;
 
@@ -540,6 +541,7 @@ void env_run(struct Env* e) {
     // LAB 3: Your code here.
     if (curenv == NULL) //第一次
     {
+
         assert(e->env_status == ENV_RUNNABLE);
 
         curenv = e;
@@ -550,16 +552,22 @@ void env_run(struct Env* e) {
         curenv->env_runs++;
     } else //其他情况切换任务
     {
-        assert(curenv->env_status == ENV_RUNNING);
-        assert(e->env_status == ENV_RUNNABLE);
-
-        curenv->env_status = ENV_RUNNABLE;
-        curenv = e;
-        curenv->env_status = ENV_RUNNING;
-        curenv->env_runs++;
+        if (curenv->env_status == ENV_RUNNING) {
+            assert(e->env_status == ENV_RUNNABLE);
+            curenv->env_status = ENV_RUNNABLE;
+            curenv = e;
+            curenv->env_status = ENV_RUNNING;
+            curenv->env_runs++;
+        } else { //自我暂停
+            assert(e->env_status == ENV_RUNNABLE);
+            curenv = e;
+            curenv->env_status = ENV_RUNNING;
+            curenv->env_runs++;
+        }
     }
 
     lcr3((uint32_t) PADDR(curenv->env_pgdir));
+    unlock_kernel();
     env_pop_tf(&curenv->env_tf);
 
     panic("env_run not yet implemented");

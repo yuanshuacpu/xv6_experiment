@@ -20,3 +20,9 @@ compile_commands.json
 .cache
 /.vscode
 __pycache__
+Docker*
+*.zsh
+fzf/
+ohmyzsh/
+qemu/
+zsh-*

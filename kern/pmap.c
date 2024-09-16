@@ -5,7 +5,7 @@
 #include <inc/mmu.h>
 #include <inc/string.h>
 #include <inc/x86.h>
-
+#include <kern/pmap.h>
 #include <kern/kclock.h>
 #include <kern/env.h>
 #include <kern/cpu.h>
@@ -217,9 +217,6 @@ void mem_init(void) {
     // Initialize the SMP-related parts of the memory map
     mem_init_mp();
 
-    // Check that the initial page directory has been set up correctly.
-    check_kern_pgdir();
-
     //////////////////////////////////////////////////////////////////////
     // Map the 'envs' array read-only by the user at linear address UENVS
     // (ie. perm = PTE_U | PTE_P).
@@ -227,7 +224,7 @@ void mem_init(void) {
     //    - the new image at UENVS  -- kernel R, user R
     //    - envs itself -- kernel RW, user NONE
     // LAB 3: Your code here.
-    boot_map_region(kern_pgdir, UENVS, PTSIZE, PADDR(envs), PTE_U);
+    boot_map_region(kern_pgdir, UENVS, ROUNDUP(NENV * sizeof(struct Env), PGSIZE), PADDR(envs), PTE_U);
 
     // Check that the initial page directory has been set up correctly.
     check_kern_pgdir();
@@ -277,6 +274,11 @@ mem_init_mp(void) {
     //     Permissions: kernel RW, user NONE
     //
     // LAB 4: Your code here:
+    for (size_t i = 0; i < NCPU; i++) {
+        uintptr_t va_i_start = KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE;
+        uintptr_t pa_i_start = PADDR(percpu_kstacks[i]);
+        boot_map_region(kern_pgdir, va_i_start, KSTKSIZE, pa_i_start, PTE_W);
+    }
 }
 
 // --------------------------------------------------------------
@@ -313,11 +315,29 @@ void page_init(void) {
     // Change the code to reflect this.
     // NB: DO NOT actually touch the physical memory corresponding to
     // free pages!
+
+    page_free_list = (struct PageInfo*) NULL;
+    pages[0].pp_ref = 0;
+    pages[0].pp_link = page_free_list;
     size_t i;
-    for (i = 0; i < npages; i++) {
+
+    size_t mp_code_addr_limt = (uint32_t) (MPENTRY_PADDR >> PGSHIFT);
+
+    size_t io_page_limit = (uint32_t) (IOPHYSMEM >> PGSHIFT);
+    size_t page_table = 0;
+    // static size_t io_page_limit=(uint32_t)(IOPHYSMEM>>PGSHIFT);
+    // static size_t page_table=0;
+    page_table = (((uint32_t) boot_alloc(0) - (uint32_t) KERNBASE) >> PGSHIFT);
+
+    // static size_t io_page_limit=(uint32_t)(IOPHYSMEM>>PGSHIFT);
+    // size_t kernel_page_limit=(EXTPHYSMEM>>PGSHIFT)+25; //内核代码和数据用25个段
+
+    for (i = 1; i < npages; i++) {
         pages[i].pp_ref = 0;
         pages[i].pp_link = page_free_list;
-        page_free_list = &pages[i];
+        if (((i < io_page_limit) && (i != mp_code_addr_limt)) || (i > page_table)) {
+            page_free_list = &pages[i];
+        }
     }
 }
 
@@ -669,7 +689,16 @@ void* mmio_map_region(physaddr_t pa, size_t size) {
     // Hint: The staff solution uses boot_map_region.
     //
     // Your code here:
-    panic("mmio_map_region not implemented");
+
+    uintptr_t size_round = ROUNDUP(size, PGSIZE);
+    uintptr_t va_end = base + size_round;
+
+    if (va_end > MMIOLIM) {
+        panic("mmio_map_region addr over\n");
+    }
+    boot_map_region(kern_pgdir, base, size_round, pa, PTE_PCD | PTE_PWT | PTE_W);
+    base = va_end;
+    return (void*) (base - size_round);
 }
 
 static uintptr_t user_mem_check_addr;
@@ -692,6 +721,7 @@ static uintptr_t user_mem_check_addr;
 // Returns 0 if the user program can access this range of addresses,
 // and -E_FAULT otherwise.
 //
+
 int user_mem_check(struct Env* env, const void* va, size_t len, int perm) {
     // LAB 3: Your code here.
     if ((uintptr_t) va >= ULIM) {
@@ -706,9 +736,9 @@ int user_mem_check(struct Env* env, const void* va, size_t len, int perm) {
             user_mem_check_addr = (uintptr_t) i;
             goto bad;
         }
-        pte_t* ret_pte;
+        pte_t* ret_pte = NULL;
         struct PageInfo* ret_page = page_lookup(env->env_pgdir, (void*) i, &ret_pte);
-        if ((ret_page == NULL) || (*ret_pte & (PTE_P | perm)) != (PTE_P | perm)) {
+        if ((ret_page == NULL) || ((*ret_pte) & (perm)) != (perm)) {
             if (i < (uintptr_t) va) {
                 user_mem_check_addr = (uintptr_t) va;
             } else {
@@ -722,7 +752,6 @@ int user_mem_check(struct Env* env, const void* va, size_t len, int perm) {
     return 0;
 
 bad:
-    cprintf("[%08x] user_mem_check assertion failure for va %08x\n", (uintptr_t) env->env_id, (uintptr_t) user_mem_check_addr);
     return -E_FAULT;
 }
 
